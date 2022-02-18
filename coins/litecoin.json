@@ -2,7 +2,6 @@
 	"name": "Litecoin",
 	"symbol": "LTC",
 	"algorithm": "scrypt",
-	"coinbase": "Crypto Pools by AoD Technologies LLC - https://cryptopools.aod-tech.com",
 	"peerMagic": "fbc0b6db",
 	"peerMagicTestnet": "fdd2c8f1",
 	"explorer": {

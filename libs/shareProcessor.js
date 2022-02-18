@@ -2,6 +2,7 @@ var redis = require('redis');
 var http = require('http');
 var Stratum = require('cryptocurrency-stratum-pool');
 var CreateRedisClient = require('./createRedisClient.js');
+var mysql = require('mysql');
 
 
 /*
@@ -20,7 +21,8 @@ module.exports = function(logger, poolConfig){
 
     var redisConfig = poolConfig.redis;
     var coin = poolConfig.coin.name;
-
+    var coinSymbol = poolConfig.coin.symbol;
+    var algo = poolConfig.coin.algorithm;
 
     var forkId = process.env.forkId;
     var logSystem = 'Pool';
@@ -67,6 +69,14 @@ module.exports = function(logger, poolConfig){
         else if (version < 2.6){
             logger.error(logSystem, logComponent, logSubCat, "You're using redis version " + versionString + " the minimum required version is 2.6. Follow the damn usage instructions...");
         }
+    });
+
+    var mysql_pool = mysql.createPool({
+        connectionLimit: 10,
+        host:"192.168.1.2",
+        user:"unomp",
+        password:"unomp",
+        database:"crypto"
     });
 
     this.handleShare = function(isValidShare, isValidBlock, shareData) {
@@ -131,6 +141,36 @@ module.exports = function(logger, poolConfig){
                 }
             }
         });
+        
+        //coin is undefined for merged-mining shares
+        if(isValidShare) {
+            //add shares directly to MySQL database
+            mysql_pool.query("INSERT INTO shares (coin,algo,target_diff,share_diff,block_diff,block_hash) VALUES (?,?,?,?,?,?)",[
+                coinSymbol.toUpperCase(),
+                algo,
+                shareData.difficulty/shareData.shareMultiplier,
+                shareData.shareDiff/shareData.shareMultiplier,
+                shareData.blockDiff/shareData.shareMultiplier,
+                shareData.blockHash
+            ], function(err,res,fields) {
+                if(err) console.error(err);
+            });
+
+            for(var i in auxinfo) {
+                var auxblockhash = (auxinfo[i].isValidBlock) ? shareData.blockHashInvalid : null;
+                mysql_pool.query("INSERT INTO shares (coin,algo,target_diff,share_diff,block_diff,block_hash) VALUES (?,?,?,?,?,?)",[
+                    auxinfo[i].coin.toUpperCase(),
+                    algo,
+                    shareData.difficulty/shareData.shareMultiplier,
+                    shareData.shareDiff/shareData.shareMultiplier,
+                    shareData.diff1 / auxinfo[i].target.toNumber(),
+                    auxblockhash
+                ], function(err,res,fields) {
+                    if(err) console.error(err);
+                });
+            }
+        }
+
     };
 
 };

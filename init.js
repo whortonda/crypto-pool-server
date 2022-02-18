@@ -102,6 +102,23 @@ var buildPoolConfigs = function(){
 
         poolOptions.coinFileName = poolOptions.coin;
 
+        for (var i=0; i < poolOptions.auxes.length; i++){
+            var auxFilePath = 'coins/' + poolOptions.auxes[i].coin;
+            if (!fs.existsSync(auxFilePath)){
+            logger.warn('Aux', poolOptions.auxes[i].coin, 'could not find file: ' + auxFilePath);
+            return;
+            }
+
+            var auxProfile = JSON.parse(JSON.minify(fs.readFileSync(auxFilePath, {encoding: 'utf8'})));
+            poolOptions.auxes[i].coin = auxProfile;
+            poolOptions.auxes[i].coin.name = poolOptions.auxes[i].coin.name.toLowerCase();
+
+            if (!(auxProfile.algorithm in algos)){
+            logger.warn('Master', auxProfile.name, 'Cannot run a pool for unsupported algorithm "' + auxProfile.algorithm + '"');
+            delete configs[poolOptions.auxcoin.name];
+            }
+        }
+
         var coinFilePath = 'coins/' + poolOptions.coinFileName;
         if (!fs.existsSync(coinFilePath)){
             logger.error('Master', poolOptions.coinFileName, 'could not find file: ' + coinFilePath);

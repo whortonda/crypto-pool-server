@@ -32,14 +32,24 @@ module.exports = function(logger){
                 break;
 
             case 'blocknotify':
-                var messageCoin = message.coin.toLowerCase();
-                var poolTarget = Object.keys(pools).filter(function(p){
-                    return p.toLowerCase() === messageCoin;
-                })[0];
-
-                if (poolTarget)
-                    pools[poolTarget].processBlockNotify(message.hash, 'blocknotify script');
-
+                if(message.coin) {
+                    var bnCoin = message.coin.toLowerCase();
+                    for(var p in pools) {
+                        if(p.toLowerCase() == bnCoin) {
+                            pools[p].processBlockNotify(message.hash, 'blocknotify script');
+                            break;
+                        }
+                        if(pools[p].auxes) {
+                            for(var a in pools[p].auxes) {                                
+                                var aux = pools[p].auxes[a].name.toLowerCase();
+                                if(aux == bnCoin) {
+                                    pools[p].processBlockNotifyAux(message.hash, bnCoin+' blocknotify script');
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
                 break;
 
             // IPC message for pool switching
@@ -96,6 +106,7 @@ module.exports = function(logger){
     Object.keys(poolConfigs).forEach(function(coin) {
 
         var poolOptions = poolConfigs[coin];
+        var myAuxes = poolConfigs[coin].auxes;
 
         var logSystem = 'Pool';
         var logComponent = coin;
@@ -167,28 +178,40 @@ module.exports = function(logger){
 
 
         var pool = Stratum.createPool(poolOptions, authorizeFN);
-        pool.on('share', function(isValidShare, isValidBlock, data){
+        pool.on('block', function(coin, height, blockHash, tx, blockReward, difficulty, worker){
+            
+            logger.special(logSystem, logComponent, logSubCat, '*** BLOCK FOUND *** '+coin+" block "+height+" with reward: "+blockReward);
+
+        }).on('auxblock', function(coin, height, blockHash, tx, blockReward, difficulty, worker) {
+
+            logger.special(logSystem, logComponent, logSubCat, '*** AUX BLOCK FOUND *** '+coin+" block "+height+" with reward: "+blockReward);
+
+        }).on('share', function(isValidShare, isValidBlock, data, auxinfo){
             
             var shareData = JSON.stringify(data);
             
+            /*
             if (data.blockHash && !isValidBlock)
                 logger.debug(logSystem, logComponent, logSubCat, 'We thought a block was found but it was rejected by the daemon, share data: ' + shareData);
 
             else if (isValidBlock)
                 logger.debug(logSystem, logComponent, logSubCat, 'Block found: ' + data.blockHash + ' by ' + data.worker);
+            */
 
             if (isValidShare) {
+                /*
                 if(data.shareDiff > 1000000000) {
                     logger.debug(logSystem, logComponent, logSubCat, 'Share was found with diff higher than 1,000,000,000!');
                 } else if(data.shareDiff > 1000000) {
                     logger.debug(logSystem, logComponent, logSubCat, 'Share was found with diff higher than 1,000,000!');
                 }
-                logger.debug(logSystem, logComponent, logSubCat, 'Share accepted at diff ' + data.difficulty + '/' + data.shareDiff + ' by ' + data.worker + ' [' + data.ip + ']' );
+                */
+                logger.debug(logSystem, logComponent, logSubCat, 'Share accepted at diff ' + _this.humanizeNumber(data.difficulty/data.shareMultiplier) + '/' + _this.humanizeNumber(data.shareDiff/data.shareMultiplier) + ' by ' + data.worker + ' [' + data.ip + ']' );
             } else if (!isValidShare) {
-                logger.debug(logSystem, logComponent, logSubCat, 'Share rejected: ' + shareData);
+                logger.error(logSystem, logComponent, logSubCat, 'Share rejected: ' + shareData);
             }
 
-            handlers.share(isValidShare, isValidBlock, data);
+            handlers.share(isValidShare, isValidBlock, data, poolOptions.coin.name, auxinfo);
         }).on('difficultyUpdate', function(workerName, diff){
             logger.debug(logSystem, logComponent, logSubCat, 'Difficulty update to diff ' + diff + ' workerName=' + JSON.stringify(workerName));
             handlers.diff(workerName, diff);
@@ -198,6 +221,8 @@ module.exports = function(logger){
             process.send({type: 'banIP', ip: ip});
         }).on('started', function(){
             _this.setDifficultyForProxyPort(pool, poolOptions.coin.name, poolOptions.coin.algorithm);
+        }).on('newJob', function(job, restart) {
+            logger.debug(logSystem, logComponent, logSubCat, 'New job '+job[0]+((restart) ? ' with work restart' : ''));
         });
 
         pool.start();
@@ -322,4 +347,24 @@ module.exports = function(logger){
             }
         });
     };
+    
+    this.humanizeNumber = function(n) {
+        if(isNaN(n)) return n;
+    
+        var suffixes = ["","k","M","G","T","P","Z","Y"];
+        var t = 1000;
+        var i = 0;
+        var s = 0;
+        
+        do {
+            if(n < Math.pow(t,i+1)) {
+                s = n/Math.pow(t,i);
+                if(s < 10) s = Math.round(s*1000) / 1000;
+                else if (s < 100) s = Math.round(s*100) / 100;
+                else s = Math.round(s*10) / 10;
+
+                return s+suffixes[i];
+            }
+        } while (++i < suffixes.length);
+    }
 };
